@@ -33,10 +33,14 @@ if __name__ == '__main__':
 
 
     # 权重初始化
+    # def init_weights(m):
+    #     if type(m) == nn.Linear:
+    #         nn.init.normal_(m.weight, std=0.01)
+
+    # Xavier初始化
     def init_weights(m):
         if type(m) == nn.Linear:
-            nn.init.normal_(m.weight, std=0.01)
-
+            nn.init.xavier_normal_(m.weight)  
 
     net.apply(init_weights)
 
