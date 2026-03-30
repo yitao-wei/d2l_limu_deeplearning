@@ -1,4 +1,4 @@
-from utils import *
+from mlp.utils import *
 
 # ===== 所有执行代码放在 __main__ 保护下 =====
 if __name__ == '__main__':

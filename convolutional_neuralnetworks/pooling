@@ -20,5 +20,7 @@ pool2d = nn.MaxPool2d(3) #pytorch默认步幅为池化窗口大小
 pool2d = nn.MaxPool2d(3, padding=1, stride=2)
 pool2d = nn.MaxPool2d((2, 3), stride=(2, 3), padding=(0, 1))
 
-X = torch.cat((X, X + 1), 0)
+X = torch.cat((X, X + 1), 1)
 print(X)
+
+pool2d = nn.MaxPool2d(3, padding=1, stride=2)

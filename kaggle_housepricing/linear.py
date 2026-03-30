@@ -1,4 +1,4 @@
-from utils import *
+from mlp.utils import *
 
 # ===============设备检测===================
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

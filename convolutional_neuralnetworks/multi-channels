@@ -1,0 +1,21 @@
+import torch
+from d2l import torch as d2l
+
+def corr2d_multi_in(X, K):
+    # 先遍历“X”和“K”的第0个维度（通道维度），再把它们加在一起
+    return sum(d2l.corr2d(x, k) for x, k in zip(X, K))
+
+def corr2d_multi_in_out(X, K):
+    # 迭代“K”的第0个维度，每次都对输入“X”执行互相关运算。
+    # 最后将所有结果都叠加在一起
+    return torch.stack([corr2d_multi_in(X, k) for k in K], 0)
+
+# 1x1卷积层的互相关运算 等价于 全连接层的矩阵乘法
+def corr2d_multi_in_out_1x1(X, K):
+    c_i, h, w = X.shape
+    c_o = K.shape[0]
+    X = X.reshape((c_i, h * w))
+    K = K.reshape((c_o, c_i))
+    # 全连接层中的矩阵乘法
+    Y = torch.matmul(K, X)
+    return Y.reshape((c_o, h, w))
