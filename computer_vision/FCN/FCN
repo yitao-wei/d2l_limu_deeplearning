@@ -1,0 +1,111 @@
+import matplotlib
+matplotlib.use('Agg')  # 改为非交互式后端，避免 VS Code 终端报错
+import matplotlib.pyplot as plt
+import torch
+import torchvision
+from torch import nn
+from torch.nn import functional as F
+from d2l import torch as d2l
+import os
+
+
+plt.savefig('training_curve.png', dpi=150)
+script_dir = os.path.dirname(os.path.abspath(__file__))
+save_path = os.path.join(script_dir, 'training_curve_fcn.png')
+
+voc_dir = r"D:\limuDeeplearning\computer_vision\data\VOCdevkit\VOC2012"
+assert os.path.exists(voc_dir), f"VOC目录不存在: {voc_dir}"
+
+# ==================== 模型定义 ====================
+pretrained_net = torchvision.models.resnet18(pretrained=True)
+net = nn.Sequential(*list(pretrained_net.children())[:-2])
+
+num_classes = 21
+net.add_module('final_conv', nn.Conv2d(512, num_classes, kernel_size=1))
+net.add_module('transpose_conv', nn.ConvTranspose2d(num_classes, num_classes,
+                                                    kernel_size=64, padding=16, stride=32))
+
+def bilinear_kernel(in_channels, out_channels, kernel_size):
+    factor = (kernel_size + 1) // 2
+    if kernel_size % 2 == 1:
+        center = factor - 1
+    else:
+        center = factor - 0.5
+    og = (torch.arange(kernel_size).reshape(-1, 1),
+          torch.arange(kernel_size).reshape(1, -1))
+    filt = (1 - torch.abs(og[0] - center) / factor) * \
+           (1 - torch.abs(og[1] - center) / factor)
+    weight = torch.zeros((in_channels, out_channels, kernel_size, kernel_size))
+    weight[range(in_channels), range(out_channels), :, :] = filt
+    return weight
+
+W = bilinear_kernel(num_classes, num_classes, 64)
+net.transpose_conv.weight.data.copy_(W)
+
+# ==================== 数据加载 ====================
+batch_size, crop_size = 32, (320, 480)
+num_workers = 0
+
+train_iter = torch.utils.data.DataLoader(
+    d2l.VOCSegDataset(True, crop_size, voc_dir), batch_size,
+    shuffle=True, drop_last=True, num_workers=num_workers)
+test_iter = torch.utils.data.DataLoader(
+    d2l.VOCSegDataset(False, crop_size, voc_dir), batch_size,
+    drop_last=True, num_workers=num_workers)
+
+# ==================== 训练循环（替代 d2l.train_ch13）====================
+def loss(inputs, targets):
+    return F.cross_entropy(inputs, targets, reduction='none').mean(1).mean(1)
+
+num_epochs, lr, wd, devices = 5, 0.001, 1e-3, d2l.try_all_gpus()
+trainer = torch.optim.SGD(net.parameters(), lr=lr, weight_decay=wd)
+
+net = nn.DataParallel(net, device_ids=devices).to(devices[0])
+
+timer = d2l.Timer()
+train_loss, train_acc, test_acc = [], [], []
+
+for epoch in range(num_epochs):
+    # 训练
+    metric = d2l.Accumulator(3)
+    net.train()
+    for X, Y in train_iter:
+        X, Y = X.to(devices[0]), Y.to(devices[0])
+        trainer.zero_grad()
+        pred = net(X)
+        l = loss(pred, Y).sum()
+        l.backward()
+        trainer.step()
+        metric.add(l, d2l.accuracy(pred, Y), Y.numel())
+    
+    train_loss.append(metric[0] / metric[2])
+    train_acc.append(metric[1] / metric[2])
+    
+    # 测试
+    test_acc.append(d2l.evaluate_accuracy_gpu(net, test_iter, devices[0]))
+    
+    print(f'Epoch {epoch+1}/{num_epochs}, '
+          f'loss {train_loss[-1]:.4f}, '
+          f'train acc {train_acc[-1]:.4f}, '
+          f'test acc {test_acc[-1]:.4f}, '
+          f'{timer.stop():.1f} sec')
+
+# ==================== 保存训练曲线 ====================
+fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+axes[0].plot(range(1, num_epochs+1), train_loss, label='train loss')
+axes[0].set_xlabel('epoch')
+axes[0].set_ylabel('loss')
+axes[0].legend()
+
+axes[1].plot(range(1, num_epochs+1), train_acc, label='train acc')
+axes[1].plot(range(1, num_epochs+1), test_acc, label='test acc')
+axes[1].set_xlabel('epoch')
+axes[1].set_ylabel('accuracy')
+axes[1].legend()
+
+plt.tight_layout()
+
+# 🔧 修改：使用构建好的绝对路径 + 新文件名
+plt.savefig(save_path, dpi=150)
+plt.close()
+print(f"训练完成，曲线已保存到 {save_path}")
